@@ -1,6 +1,4 @@
 import StandaloneLayout from "./layout"
-import "../style/main.scss"
-
 import ConfigsPlugin from "plugins/configs"
 
 // the Standalone preset

@@ -46,6 +46,15 @@ export const spec = state => {
   return res
 }
 
+export const isOAS3 = createSelector(
+  // isOAS3 is stubbed out here to work around an issue with injecting more selectors
+  // in the OAS3 plugin, and to ensure that the function is always available.
+  // It's not perfect, but our hybrid (core+plugin code) implementation for OAS3
+  // needs this. //KS
+  spec,
+	() => false
+)
+
 export const info = createSelector(
   spec,
 	spec => returnSelfOrNewMap(spec && spec.get("info"))
@@ -200,15 +209,22 @@ export const operationsWithTags = createSelector(
   }
 )
 
-export const taggedOperations = ( state ) =>( { getConfigs } ) => {
-  let { operationsSorter }= getConfigs()
+export const taggedOperations = (state) => ({ getConfigs }) => {
+  let { tagsSorter, operationsSorter } = getConfigs()
+  return operationsWithTags(state)
+    .sortBy(
+      (val, key) => key, // get the name of the tag to be passed to the sorter
+      (tagA, tagB) => {
+        let sortFn = (typeof tagsSorter === "function" ? tagsSorter : sorters.tagsSorter[ tagsSorter ])
+        return (!sortFn ? null : sortFn(tagA, tagB))
+      }
+    )
+    .map((ops, tag) => {
+      let sortFn = (typeof operationsSorter === "function" ? operationsSorter : sorters.operationsSorter[ operationsSorter ])
+      let operations = (!sortFn ? ops : ops.sort(sortFn))
 
-  return operationsWithTags(state).map((ops, tag) => {
-    let sortFn = typeof operationsSorter === "function" ? operationsSorter
-                                                        : sorters.operationsSorter[operationsSorter]
-    let operations = !sortFn ? ops : ops.sort(sortFn)
-
-    return Map({tagDetails: tagDetails(state, tag), operations: operations})})
+      return Map({ tagDetails: tagDetails(state, tag), operations: operations })
+    })
 }
 
 export const responses = createSelector(
@@ -221,12 +237,21 @@ export const requests = createSelector(
     state => state.get( "requests", Map() )
 )
 
+export const mutatedRequests = createSelector(
+    state,
+    state => state.get( "mutatedRequests", Map() )
+)
+
 export const responseFor = (state, path, method) => {
   return responses(state).getIn([path, method], null)
 }
 
 export const requestFor = (state, path, method) => {
   return requests(state).getIn([path, method], null)
+}
+
+export const mutatedRequestFor = (state, path, method) => {
+  return mutatedRequests(state).getIn([path, method], null)
 }
 
 export const allowTryItOutFor = () => {
@@ -277,12 +302,13 @@ export function parametersIncludeType(parameters, typeValue="") {
 export function contentTypeValues(state, pathMethod) {
   let op = spec(state).getIn(["paths", ...pathMethod], fromJS({}))
   const parameters = op.get("parameters") || new List()
-  const requestContentType = (
-      parametersIncludeType(parameters, "file") ? "multipart/form-data"
-    : parametersIncludeIn(parameters, "formData") ? "application/x-www-form-urlencoded"
-    : op.get("consumes_value")
-  )
 
+  const requestContentType = (
+    op.get("consumes_value") ? op.get("consumes_value")
+      : parametersIncludeType(parameters, "file") ? "multipart/form-data"
+      : parametersIncludeType(parameters, "formData") ? "application/x-www-form-urlencoded"
+      : undefined
+  )
 
   return fromJS({
     requestContentType,

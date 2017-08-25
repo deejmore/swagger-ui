@@ -1,5 +1,8 @@
 import React from "react"
 import PropTypes from "prop-types"
+import { helpers } from "swagger-client"
+
+const { opId } = helpers
 
 export default class Operations extends React.Component {
 
@@ -33,7 +36,15 @@ export default class Operations extends React.Component {
     const Collapse = getComponent("Collapse")
 
     let showSummary = layoutSelectors.showSummary()
-    let { docExpansion, displayOperationId, displayRequestDuration, maxDisplayedTags } = getConfigs()
+    let {
+      docExpansion,
+      displayOperationId,
+      displayRequestDuration,
+      maxDisplayedTags,
+      deepLinking
+    } = getConfigs()
+
+    const isDeepLinkingEnabled = deepLinking && deepLinking !== "false"
 
     let filter = layoutSelectors.currentFilter()
 
@@ -55,6 +66,8 @@ export default class Operations extends React.Component {
             taggedOps.map( (tagObj, tag) => {
               let operations = tagObj.get("operations")
               let tagDescription = tagObj.getIn(["tagDetails", "description"], null)
+              let tagExternalDocsDescription = tagObj.getIn(["tagDetails", "externalDocs", "description"])
+              let tagExternalDocsUrl = tagObj.getIn(["tagDetails", "externalDocs", "url"])
 
               let isShownKey = ["operations-tag", tag]
               let showTag = layoutSelectors.isShown(isShownKey, docExpansion === "full" || docExpansion === "list")
@@ -62,17 +75,41 @@ export default class Operations extends React.Component {
               return (
                 <div className={showTag ? "opblock-tag-section is-open" : "opblock-tag-section"} key={"operation-" + tag}>
 
-                  <h4 onClick={() => layoutActions.show(isShownKey, !showTag)} className={!tagDescription ? "opblock-tag no-desc" : "opblock-tag" }>
-                    <span>{tag}</span>
+                  <h4
+                    onClick={() => layoutActions.show(isShownKey, !showTag)}
+                    className={!tagDescription ? "opblock-tag no-desc" : "opblock-tag" }
+                    id={isShownKey.join("-")}>
+                    <a
+                      className="nostyle"
+                      onClick={(e) => e.preventDefault()}
+                      href={ isDeepLinkingEnabled ? `#/${tag}` : ""}>
+                      <span>{tag}</span>
+                    </a>
                     { !tagDescription ? null :
                         <small>
                           { tagDescription }
                         </small>
                     }
 
+                    <div>
+                    { !tagExternalDocsDescription ? null :
+                        <small>
+                          { tagExternalDocsDescription }
+                          { tagExternalDocsUrl ? ": " : null }
+                          { tagExternalDocsUrl ?
+                            <a
+                              href={tagExternalDocsUrl}
+                              onClick={(e) => e.stopPropagation()}
+                              target={"_blank"}
+                            >{tagExternalDocsUrl}</a> : null
+                          }
+                        </small>
+                    }
+                    </div>
+
                     <button className="expand-operation" title="Expand operation" onClick={() => layoutActions.show(isShownKey, !showTag)}>
                       <svg className="arrow" width="20" height="20">
-                        <use xlinkHref={showTag ? "#large-arrow-down" : "#large-arrow"} />
+                        <use href={showTag ? "#large-arrow-down" : "#large-arrow"} xlinkHref={showTag ? "#large-arrow-down" : "#large-arrow"} />
                       </svg>
                     </button>
                   </h4>
@@ -81,10 +118,13 @@ export default class Operations extends React.Component {
                     {
                       operations.map( op => {
 
-                        const isShownKey = ["operations", op.get("id"), tag]
                         const path = op.get("path", "")
                         const method = op.get("method", "")
                         const jumpToKey = `paths.${path}.${method}`
+
+                        const operationId =
+                        op.getIn(["operation", "operationId"]) || op.getIn(["operation", "__originalOperationId"]) || opId(op.get("operation"), path, method) || op.get("id")
+                        const isShownKey = ["operations", tag, operationId]
 
                         const allowTryItOut = specSelectors.allowTryItOutFor(op.get("path"), op.get("method"))
                         const response = specSelectors.responseFor(op.get("path"), op.get("method"))

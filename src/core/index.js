@@ -4,23 +4,31 @@ import System from "core/system"
 import win from "core/window"
 import ApisPreset from "core/presets/apis"
 import * as AllPlugins from "core/plugins/all"
-import { parseSeach, filterConfigs } from "core/utils"
+import { parseSearch } from "core/utils"
 
-const CONFIGS = [ "url", "urls", "urls.primaryName", "spec", "validatorUrl", "onComplete", "onFailure", "authorizations", "docExpansion", "maxDisplayedTags", "filter",
-    "apisSorter", "operationsSorter", "supportedSubmitMethods", "dom_id", "defaultModelRendering", "oauth2RedirectUrl",
-    "showRequestHeaders", "custom", "modelPropertyMacro", "parameterMacro", "displayOperationId" , "displayRequestDuration"]
+if (process.env.NODE_ENV !== "production") {
+  const Perf = require("react-addons-perf")
+  window.Perf = Perf
+}
 
 // eslint-disable-next-line no-undef
-const { GIT_DIRTY, GIT_COMMIT, PACKAGE_VERSION } = buildInfo
+const { GIT_DIRTY, GIT_COMMIT, PACKAGE_VERSION, HOSTNAME, BUILD_TIME } = buildInfo
 
 module.exports = function SwaggerUI(opts) {
 
   win.versions = win.versions || {}
-  win.versions.swaggerUi = `${PACKAGE_VERSION}/${GIT_COMMIT || "unknown"}${GIT_DIRTY ? "-dirty" : ""}`
+  win.versions.swaggerUi = {
+    version: PACKAGE_VERSION,
+    gitRevision: GIT_COMMIT,
+    gitDirty: GIT_DIRTY,
+    buildTimestamp: BUILD_TIME,
+    machine: HOSTNAME
+  }
 
   const defaults = {
     // Some general settings, that we floated to the top
     dom_id: null,
+    domNode: null,
     spec: {},
     url: "",
     urls: null,
@@ -33,10 +41,15 @@ module.exports = function SwaggerUI(opts) {
     custom: {},
     displayOperationId: false,
     displayRequestDuration: false,
+    deepLinking: false,
+    requestInterceptor: (a => a),
+    responseInterceptor: (a => a),
+    showMutatedRequest: true,
 
     // Initial set of plugins ( TODO rename this, or refactor - we don't need presets _and_ plugins. Its just there for performance.
     // Instead, we can compile the first plugin ( it can be a collection of plugins ), then batch the rest.
     presets: [
+      ApisPreset
     ],
 
     // Plugins; ( loaded after presets )
@@ -52,7 +65,10 @@ module.exports = function SwaggerUI(opts) {
     store: { },
   }
 
-  let queryConfig = parseSeach()
+  let queryConfig = parseSearch()
+
+  const domNode = opts.domNode
+  delete opts.domNode
 
   const constructorConfig = deepExtend({}, defaults, opts, queryConfig)
 
@@ -95,7 +111,13 @@ module.exports = function SwaggerUI(opts) {
 
     let localConfig = system.specSelectors.getLocalConfig ? system.specSelectors.getLocalConfig() : {}
     let mergedConfig = deepExtend({}, localConfig, constructorConfig, fetchedConfig || {}, queryConfig)
-    store.setConfigs(filterConfigs(mergedConfig, CONFIGS))
+
+    // deep extend mangles domNode, we need to set it manually
+    if(domNode) {
+      mergedConfig.domNode = domNode
+    }
+
+    store.setConfigs(mergedConfig)
 
     if (fetchedConfig !== null) {
       if (!queryConfig.url && typeof mergedConfig.spec === "object" && Object.keys(mergedConfig.spec).length) {
@@ -108,10 +130,13 @@ module.exports = function SwaggerUI(opts) {
       }
     }
 
-    if(mergedConfig.dom_id) {
-      system.render(mergedConfig.dom_id, "App")
+    if(mergedConfig.domNode) {
+      system.render(mergedConfig.domNode, "App")
+    } else if(mergedConfig.dom_id) {
+      let domNode = document.querySelector(mergedConfig.dom_id)
+      system.render(domNode, "App")
     } else {
-      console.error("Skipped rendering: no `dom_id` was specified")
+      console.error("Skipped rendering: no `dom_id` or `domNode` was specified")
     }
 
     return system
